@@ -114,7 +114,7 @@ pub struct ConvertConfig<'a, Src, Dst> {
 // ---------------------------------------------------------------------------
 
 /// A numeric type that can participate in cast_value conversions.
-pub trait CastType: Copy + PartialEq + PartialOrd + std::fmt::Debug + FromF64 {
+pub trait CastType: Copy + PartialEq + PartialOrd + std::fmt::Debug {
     /// Whether this is a floating-point type (has NaN/Inf).
     const IS_FLOAT: bool;
     /// Whether this is an integer type (needs range checking as target).
@@ -124,8 +124,26 @@ pub trait CastType: Copy + PartialEq + PartialOrd + std::fmt::Debug + FromF64 {
     fn is_nan(self) -> bool;
     /// Returns true if the value is infinite.
     fn is_infinite(self) -> bool;
-    /// Convert to f64 for error reporting.
+    /// Convert to f64 for error reporting only (not in the conversion hot path).
     fn to_f64_lossy(self) -> f64;
+
+    /// Euclidean remainder. Only meaningful for float types (used in float→int
+    /// wrap mode). Integer types may panic — the call is guarded by IS_FLOAT.
+    fn rem_euclid(self, _rhs: Self) -> Self {
+        unreachable!("rem_euclid called on integer type")
+    }
+    /// Subtraction in native type. Only meaningful for float types.
+    fn sub(self, _rhs: Self) -> Self {
+        unreachable!("sub called on integer type")
+    }
+    /// Addition in native type. Only meaningful for float types.
+    fn add(self, _rhs: Self) -> Self {
+        unreachable!("add called on integer type")
+    }
+    /// The value 1 in this type. Only meaningful for float types.
+    fn one() -> Self {
+        unreachable!("one called on integer type")
+    }
 }
 
 /// Rounding support. Float types implement actual rounding;
@@ -229,13 +247,10 @@ where
                     }
                     if val < lo || val > hi {
                         // The value is an integer-valued float (already rounded).
-                        // Use f64 modular arithmetic since Src is already float.
-                        let lo_f = lo.to_f64_lossy();
-                        let hi_f = hi.to_f64_lossy();
-                        let range = hi_f - lo_f + 1.0;
-                        let v = val.to_f64_lossy();
-                        let wrapped = ((v - lo_f).rem_euclid(range)) + lo_f;
-                        return Ok(Dst::from_f64(wrapped));
+                        // Wrap using native float arithmetic — no f64 promotion.
+                        let range = hi.sub(lo).add(Src::one());
+                        let wrapped = val.sub(lo).rem_euclid(range).add(lo);
+                        return Ok(wrapped.cast_into());
                     }
                 } else if val < lo || val > hi {
                     // Int→int wrap: Rust's `as` cast truncates to the target
@@ -307,12 +322,9 @@ where
                         });
                     }
                     if val < lo || val > hi {
-                        let lo_f = lo.to_f64_lossy();
-                        let hi_f = hi.to_f64_lossy();
-                        let range = hi_f - lo_f + 1.0;
-                        let v = val.to_f64_lossy();
-                        let wrapped = ((v - lo_f).rem_euclid(range)) + lo_f;
-                        return Ok(Dst::from_f64(wrapped));
+                        let range = hi.sub(lo).add(Src::one());
+                        let wrapped = val.sub(lo).rem_euclid(range).add(lo);
+                        return Ok(wrapped.cast_into());
                     }
                 } else if val < lo || val > hi {
                     return Ok(val.cast_into());
@@ -396,6 +408,10 @@ macro_rules! impl_cast_type_float {
                 #[inline] fn is_nan(self) -> bool { <$ty>::is_nan(self) }
                 #[inline] fn is_infinite(self) -> bool { <$ty>::is_infinite(self) }
                 #[inline] fn to_f64_lossy(self) -> f64 { self as f64 }
+                #[inline] fn rem_euclid(self, rhs: Self) -> Self { <$ty>::rem_euclid(self, rhs) }
+                #[inline] fn sub(self, rhs: Self) -> Self { self - rhs }
+                #[inline] fn add(self, rhs: Self) -> Self { self + rhs }
+                #[inline] fn one() -> Self { 1.0 }
             }
         )*
     };
@@ -600,7 +616,7 @@ mod tests {
         map: &[MapEntry<Src, Dst>],
         rounding: RoundingMode,
         oor: Option<OutOfRangeMode>,
-    ) -> ConvertConfig<Src, Dst> {
+    ) -> ConvertConfig<'_, Src, Dst> {
         ConvertConfig {
             map_entries: map,
             rounding,

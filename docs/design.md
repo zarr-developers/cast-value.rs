@@ -161,12 +161,31 @@ For **zarrs**: the `ArrayToArrayCodecTraits::encode`/`decode` methods.
 
 ---
 
-## No intermediate buffer
+## No intermediate types
 
-There is no f64 (or any other) intermediate representation. Each element is read
-in its source type, transformed in that type, and written in the target type.
+A core design principle: **avoid promoting values to an intermediate type (e.g.
+f64) during conversion.** Each element should be read in its source type,
+transformed in that type, and written in the target type. Intermediate
+promotion risks precision loss, adds unnecessary computation, and makes it
+harder to reason about correctness.
 
-This means:
+### Where this applies
+
+- **Scalar map lookup**: Comparison uses `val == entry.src` in native `Src`
+  type. Map entries are stored as `MapEntry<Src, Dst>` with typed fields.
+- **NaN/Inf checks**: `val.is_nan()` and `val.is_infinite()` on the source type.
+- **Rounding**: Uses the source float's own precision. For f32 sources, rounding
+  happens in f32 — no promotion to f64.
+- **Range checking**: Compares source values against target bounds expressed in
+  `Src` space via `CastInto<Dst>::dst_min()` / `dst_max()`.
+- **Clamping**: Clamps in source type, then casts once.
+- **Int→int wrap**: Uses Rust's `as` cast (bit truncation = modular arithmetic).
+  No intermediate type needed.
+- **Float→int wrap**: Uses `rem_euclid` on the source float type directly,
+  via the `CastFloat` trait. No promotion to f64.
+- **Final cast**: A single `Src → Dst` conversion at the end of the pipeline.
+
+### Per-path summary
 
 - **int→int** (e.g. i32→u8): range check on the i32 value, then cast to u8.
   No precision loss possible.
@@ -175,6 +194,18 @@ This means:
 - **int→float** (e.g. i16→f32): scalar map (if any) on the i16 value, then cast
   to f32.
 - **float→float** (e.g. f32→f64): scalar map (if any), then cast.
+
+### Acceptable exceptions
+
+Two places where `to_f64_lossy()` is used, both outside the conversion
+hot path:
+
+1. **Error reporting**: `CastError::OutOfRange` and `CastError::NanOrInf` carry
+   f64 values for human-readable error messages. This only runs on the error
+   path, never during successful conversion.
+2. **Python boundary**: `parse_map_entries` receives f64 pairs from Python and
+   converts them to typed `MapEntry<Src, Dst>` via `FromF64`. This runs once
+   at dispatch time, not per element.
 
 ---
 
