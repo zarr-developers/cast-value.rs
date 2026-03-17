@@ -1,0 +1,13 @@
+[package]
+name = "zarr-cast-value"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "zarr_cast_value"
+crate-type = ["cdylib"]
+
+[dependencies]
+zarr-cast-value-core = { path = "../core" }
+pyo3 = { version = "0.25", features = ["extension-module"] }
+numpy = "0.25"
