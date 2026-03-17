@@ -90,21 +90,28 @@ fn convert_int_to_int<Src: CastInt, Dst: CastInt>(val, map, range) -> Result<Dst
     2. range check + clamp/wrap (wrap uses bit-truncating `as` cast)
     3. cast Src → Dst
 
-fn convert_float_to_float<Src: CastFloat, Dst: CastFloat>(val, map) -> Result<Dst>:
+fn convert_float_to_float<Src: CastFloat, Dst: CastFloat>(val, map, rounding, range) -> Result<Dst>:
     1. scalar_map lookup (first match wins)
-    2. cast Src → Dst
+    2. NaN/Inf propagation (IEEE 754; signed zero preserved)
+    3. cast Src → Dst (nearest-even by default)
+    4. rounding adjustment (if mode ≠ nearest-even and cast was inexact)
+    5. range check: if finite source overflowed to ±Inf → clamp or error
 
-fn convert_int_to_float<Src: CastInt, Dst: CastFloat>(val, map) -> Result<Dst>:
+fn convert_int_to_float<Src: CastInt, Dst: CastFloat>(val, map, rounding) -> Result<Dst>:
     1. scalar_map lookup (first match wins)
-    2. cast Src → Dst
+    2. cast Src → Dst (nearest-even by default)
+    3. rounding adjustment (if mode ≠ nearest-even and cast was inexact)
 ```
 
 Each function is a pure function with no allocations. The trait bounds ensure:
-- Rounding (`round`) is only callable on `CastFloat` sources.
+- Round-to-integer (`round`) is only callable on `CastFloat` sources.
 - NaN/Inf checks (`is_nan`, `is_infinite`) are only callable on `CastFloat` sources.
 - Float-only arithmetic (`rem_euclid`, `sub`, `add`, `one`) is only available
   on `CastFloat` types — no `unreachable!` fallback needed.
-- Range checking is only applied when the target is `CastInt`.
+- Precision-loss rounding applies to float→int, float→float, and int→float
+  paths (any cast where the target type cannot exactly represent the input).
+- Range checking applies when the target is `CastInt` or when float→float
+  narrowing can overflow (e.g. f64→f32 beyond f32::MAX).
 
 Steps operate on the source type. Rounding uses the source float's own
 precision. Range checking compares against the target type's bounds. The actual
@@ -204,8 +211,13 @@ harder to reason about correctness.
 - **Scalar map lookup**: Comparison uses `val == entry.src` in native `Src`
   type. Map entries are stored as `MapEntry<Src, Dst>` with typed fields.
 - **NaN/Inf checks**: `val.is_nan()` and `val.is_infinite()` on the source type.
-- **Rounding**: Uses the source float's own precision. For f32 sources, rounding
-  happens in f32 — no promotion to f64.
+- **Rounding (float→int)**: Uses the source float's own precision. For f32
+  sources, rounding happens in f32 — no promotion to f64.
+- **Rounding adjustment (float→float, int→float)**: After the `as` cast
+  (nearest-even), inexact results are adjusted using `next_up()`/`next_down()`
+  on the target float type. The inexactness check uses `to_f64_lossy()` — this
+  is acceptable because it only affects whether an adjustment is needed, not the
+  final value.
 - **Range checking**: Compares source values against target bounds expressed in
   `Src` space via `CastInto<Dst>::dst_min()` / `dst_max()`.
 - **Clamping**: Clamps in source type, then casts once.
@@ -219,17 +231,17 @@ harder to reason about correctness.
 ### Per-path summary
 
 - **int→int** (e.g. i32→u8): range check on the i32 value, then cast to u8.
-  No precision loss possible.
-- **float→int** (e.g. f64→u8): scalar map, round, range check — all on the f64
-  value — then cast to u8.
-- **int→float** (e.g. i16→f32): scalar map (if any) on the i16 value, then cast
-  to f32.
-- **float→float** (e.g. f32→f64): scalar map (if any), then cast.
+  No precision loss possible. No rounding.
+- **float→int** (e.g. f64→u8): scalar map, round to integer, range check — all
+  on the f64 value — then cast to u8.
+- **int→float** (e.g. i64→f32): scalar map (if any) on the i64 value, cast to
+  f32, then rounding adjustment if the cast was inexact and mode ≠ nearest-even.
+- **float→float** (e.g. f64→f32): scalar map (if any), NaN/Inf/zero
+  propagation, cast, rounding adjustment if inexact, overflow check.
 
 ### Acceptable exceptions
 
-Two places where `to_f64_lossy()` is used, both outside the conversion
-hot path:
+Three places where `to_f64_lossy()` is used:
 
 1. **Error reporting**: `CastError::OutOfRange` and `CastError::NanOrInf` carry
    f64 values for human-readable error messages. This only runs on the error
@@ -237,6 +249,12 @@ hot path:
 2. **Python boundary**: `parse_map_entries` receives f64 pairs from Python and
    converts them to typed `MapEntry<Src, Dst>` via `FromF64`. This runs once
    at dispatch time, not per element.
+3. **Rounding adjustment (float→float, int→float)**: After the `as` cast, we
+   compare `result.to_f64_lossy()` against `val.to_f64_lossy()` to detect
+   whether rounding occurred. This is in the per-element path but only executes
+   when the rounding mode is not `nearest-even` (the common default). It does
+   not affect the output value — the adjustment uses `next_up()`/`next_down()`
+   on the target type, which are exact operations.
 
 ---
 
@@ -356,9 +374,13 @@ trait CastInt: CastNum {}
 trait CastFloat: CastNum {
     fn is_nan(self) -> bool;
     fn is_infinite(self) -> bool;
+    fn is_finite(self) -> bool;
     fn round(self, mode: RoundingMode) -> Self;
     fn rem_euclid(self, rhs: Self) -> Self;
     fn one() -> Self;
+    fn next_up(self) -> Self;    // IEEE 754 nextUp
+    fn next_down(self) -> Self;  // IEEE 754 nextDown
+    fn abs(self) -> Self;
     // Standard arithmetic via core::ops::Add/Sub
 }
 
@@ -428,16 +450,41 @@ feature.
 
 ## Rounding Modes
 
-Only applied for float→int casts. Int→int and any→float paths skip rounding.
-Rounding operates on the source float value directly (no intermediate type).
+Applied when casting to a data type with insufficient numerical precision. Per
+the zarr cast_value spec, this includes:
 
-| Mode | Method on source float | Behavior |
-|------|----------------------|----------|
-| `nearest-even` | `.round_ties_even()` | IEEE 754 banker's rounding |
-| `towards-zero` | `.trunc()` | Truncate towards zero |
-| `towards-positive` | `.ceil()` | Round towards +∞ |
-| `towards-negative` | `.floor()` | Round towards −∞ |
-| `nearest-away` | `.copysign((.abs() + 0.5).floor(), self)` | Round half away from zero |
+- **float→int**: rounding a float to the nearest integer value
+- **float→float**: narrowing precision (e.g. f64→f32) when the value is not
+  exactly representable in the target type
+- **int→float**: large integers that exceed the mantissa precision of the
+  target float (e.g. int64→float32 for values > 2^24)
+
+Int→int casts never require rounding (integers are always exact).
+
+For float→int, rounding operates on the source float value directly using
+`.round()`, `.trunc()`, `.ceil()`, `.floor()`, or `.copysign()`. For
+float→float and int→float, Rust's `as` cast always uses nearest-even; when a
+different mode is requested and the cast is inexact, the result is adjusted
+using `next_up()`/`next_down()` on the target float type.
+
+| Mode | Behavior |
+|------|----------|
+| `nearest-even` | Round to nearest, ties to even (IEEE 754 `roundTiesToEven`) |
+| `towards-zero` | Round towards zero |
+| `towards-positive` | Round towards +∞ (ceiling) |
+| `towards-negative` | Round towards −∞ (floor) |
+| `nearest-away` | Round to nearest, ties away from zero |
+
+For **float→int**, these are implemented directly on the source float:
+`.round_ties_even()`, `.trunc()`, `.ceil()`, `.floor()`, or
+`.copysign((.abs() + 0.5).floor(), self)`.
+
+For **float→float** and **int→float**, Rust's `as` cast always uses
+nearest-even. When a different mode is requested and the cast is inexact,
+the result is adjusted by one ULP using `next_up()`/`next_down()` on the
+target float type. For `nearest-away`, ties are detected by checking if the
+original value falls exactly at the midpoint between the result and the
+adjacent representable value.
 
 These methods are available on `f32` and `f64` natively. For `f16` and `bf16`
 (which lack native arithmetic), the value is promoted to `f32` for the rounding
@@ -447,7 +494,9 @@ operation — this is lossless since both fit within f32's precision.
 
 ## Out-of-Range Handling
 
-Applied only when the target is an integer type.
+Applied when a value exceeds the representable range of the target type.
+
+### Integer targets (float→int and int→int)
 
 | Mode | Behavior |
 |------|----------|
@@ -458,6 +507,24 @@ Applied only when the target is an integer type.
 Range bounds (`dst_min`, `dst_max`) are provided by `CastInto<Dst>::dst_min()`
 and `CastInto<Dst>::dst_max()`, expressed in the source type. This means no
 intermediate representation is needed for the comparison.
+
+### Float targets (float→float only)
+
+When narrowing from a wider float to a narrower one (e.g. f64→f32), a finite
+source value may overflow to ±Infinity. Per the spec:
+
+| Mode | Behavior |
+|------|----------|
+| `None` | Return error on overflow (finite→Inf) |
+| `"clamp"` | Map to ±Infinity (which is what the `as` cast already produces) |
+| `"wrap"` | **Not permitted** for float targets (errors) |
+
+Source ±Infinity propagates to target ±Infinity unconditionally (IEEE 754), and
+does not trigger the out-of-range check. Only finite-to-infinite overflow is
+considered out-of-range.
+
+Int→float casts never overflow (all integer ranges fit within f32/f64's finite
+range), so out-of-range does not apply.
 
 ---
 
@@ -604,7 +671,7 @@ the four slice conversion functions, and the supporting types and traits
 A zarrs-side `CastValue` struct would implement `ArrayToArrayCodecTraits`. Its
 `encode`/`decode` methods would:
 
-1. Determine `src_dtype` and `tgt_dtype` from `data_type` and `self.target_data_type`
+1. Determine `src_dtype` and `tgt_dtype` from the array's `data_type` and the codec's `data_type` field
 2. Parse scalar map entries from JSON via `DataTypeTraits::fill_value` into
    typed `MapEntry<Src, Dst>` values
 3. Reinterpret `ArrayBytes::Fixed` as a typed `&[Src]` slice

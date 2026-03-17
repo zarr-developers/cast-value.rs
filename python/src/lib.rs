@@ -175,6 +175,8 @@ where
 fn do_float_to_float_alloc<'py, Src, Dst>(
     py: Python<'py>,
     arr: &Bound<'py, pyo3::types::PyAny>,
+    rounding: RoundingMode,
+    oor: Option<OutOfRangeMode>,
     map_entries_py: Option<&Bound<'py, PyList>>,
 ) -> PyResult<PyObject>
 where
@@ -188,6 +190,8 @@ where
     let map_entries = parse_map_entries::<Src, Dst>(map_entries_py)?;
     let config = FloatToFloatConfig {
         map_entries: &map_entries,
+        rounding,
+        out_of_range: oor,
     };
     let shape: Vec<usize> = arr.getattr("shape")?.extract()?;
     let output = PyArrayDyn::<Dst>::zeros(py, &shape[..], false);
@@ -208,6 +212,7 @@ where
 fn do_int_to_float_alloc<'py, Src, Dst>(
     py: Python<'py>,
     arr: &Bound<'py, pyo3::types::PyAny>,
+    rounding: RoundingMode,
     map_entries_py: Option<&Bound<'py, PyList>>,
 ) -> PyResult<PyObject>
 where
@@ -221,6 +226,7 @@ where
     let map_entries = parse_map_entries::<Src, Dst>(map_entries_py)?;
     let config = IntToFloatConfig {
         map_entries: &map_entries,
+        rounding,
     };
     let shape: Vec<usize> = arr.getattr("shape")?.extract()?;
     let output = PyArrayDyn::<Dst>::zeros(py, &shape[..], false);
@@ -315,6 +321,8 @@ fn do_float_to_float_into<'py, Src, Dst>(
     py: Python<'py>,
     arr: &Bound<'py, pyo3::types::PyAny>,
     out: &Bound<'py, pyo3::types::PyAny>,
+    rounding: RoundingMode,
+    oor: Option<OutOfRangeMode>,
     map_entries_py: Option<&Bound<'py, PyList>>,
 ) -> PyResult<PyObject>
 where
@@ -328,6 +336,8 @@ where
     let map_entries = parse_map_entries::<Src, Dst>(map_entries_py)?;
     let config = FloatToFloatConfig {
         map_entries: &map_entries,
+        rounding,
+        out_of_range: oor,
     };
     let out_arr: &Bound<'_, PyArrayDyn<Dst>> = out.downcast()?;
     {
@@ -347,6 +357,7 @@ fn do_int_to_float_into<'py, Src, Dst>(
     py: Python<'py>,
     arr: &Bound<'py, pyo3::types::PyAny>,
     out: &Bound<'py, pyo3::types::PyAny>,
+    rounding: RoundingMode,
     map_entries_py: Option<&Bound<'py, PyList>>,
 ) -> PyResult<PyObject>
 where
@@ -360,6 +371,7 @@ where
     let map_entries = parse_map_entries::<Src, Dst>(map_entries_py)?;
     let config = IntToFloatConfig {
         map_entries: &map_entries,
+        rounding,
     };
     let out_arr: &Bound<'_, PyArrayDyn<Dst>> = out.downcast()?;
     {
@@ -403,12 +415,12 @@ fn dispatch_alloc<'py>(
     }
     macro_rules! float_to_float {
         ($src_ty:ty, $dst_ty:ty) => {
-            do_float_to_float_alloc::<$src_ty, $dst_ty>(py, arr, map_entries_py)
+            do_float_to_float_alloc::<$src_ty, $dst_ty>(py, arr, rounding, oor, map_entries_py)
         };
     }
     macro_rules! int_to_float {
         ($src_ty:ty, $dst_ty:ty) => {
-            do_int_to_float_alloc::<$src_ty, $dst_ty>(py, arr, map_entries_py)
+            do_int_to_float_alloc::<$src_ty, $dst_ty>(py, arr, rounding, map_entries_py)
         };
     }
 
@@ -497,12 +509,12 @@ fn dispatch_into<'py>(
     }
     macro_rules! float_to_float {
         ($src_ty:ty, $dst_ty:ty) => {
-            do_float_to_float_into::<$src_ty, $dst_ty>(py, arr, out, map_entries_py)
+            do_float_to_float_into::<$src_ty, $dst_ty>(py, arr, out, rounding, oor, map_entries_py)
         };
     }
     macro_rules! int_to_float {
         ($src_ty:ty, $dst_ty:ty) => {
-            do_int_to_float_into::<$src_ty, $dst_ty>(py, arr, out, map_entries_py)
+            do_int_to_float_into::<$src_ty, $dst_ty>(py, arr, out, rounding, map_entries_py)
         };
     }
 
