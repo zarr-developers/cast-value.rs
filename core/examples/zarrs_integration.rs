@@ -15,9 +15,10 @@
 // The example only covers a subset of dtype pairs; unused variants are expected.
 #![allow(dead_code)]
 
+use num_traits::FromPrimitive;
 use serde::Deserialize;
 use zarr_cast_value_core::{
-    FloatToFloatConfig, FloatToIntConfig, FromF64, IntToFloatConfig, IntToIntConfig, MapEntry,
+    FloatToFloatConfig, FloatToIntConfig, IntToFloatConfig, IntToIntConfig, MapEntry,
     OutOfRangeMode, RoundingMode,
 };
 
@@ -64,15 +65,15 @@ struct CastValueConfig {
     /// The spec field is `data_type`, not `target_dtype`.
     data_type: String,
     #[serde(default = "default_rounding")]
-    rounding: String,
+    rounding: RoundingMode,
     #[serde(default)]
-    out_of_range: Option<String>,
+    out_of_range: Option<OutOfRangeMode>,
     #[serde(default)]
     scalar_map: Option<ScalarMapConfig>,
 }
 
-fn default_rounding() -> String {
-    "nearest-even".to_string()
+fn default_rounding() -> RoundingMode {
+    RoundingMode::NearestEven
 }
 
 #[derive(Debug, Deserialize)]
@@ -169,8 +170,8 @@ fn parse_map_entries_from_json<Src, Dst>(
     entries: &[(serde_json::Value, serde_json::Value)],
 ) -> Vec<MapEntry<Src, Dst>>
 where
-    Src: FromF64,
-    Dst: FromF64,
+    Src: FromPrimitive,
+    Dst: FromPrimitive,
 {
     entries
         .iter()
@@ -178,8 +179,8 @@ where
             let src_f64 = json_scalar_to_f64(src_json);
             let dst_f64 = json_scalar_to_f64(dst_json);
             MapEntry {
-                src: Src::from_f64(src_f64),
-                tgt: Dst::from_f64(dst_f64),
+                src: Src::from_f64(src_f64).expect("valid source scalar"),
+                tgt: Dst::from_f64(dst_f64).expect("valid target scalar"),
             }
         })
         .collect()
@@ -192,7 +193,7 @@ where
 fn bytes_as_slice<T: Copy>(bytes: &[u8]) -> &[T] {
     let element_size = std::mem::size_of::<T>();
     assert!(
-        bytes.len().is_multiple_of(element_size),
+        bytes.len() % element_size == 0,
         "byte length {} not a multiple of element size {}",
         bytes.len(),
         element_size
@@ -205,7 +206,7 @@ fn bytes_as_slice<T: Copy>(bytes: &[u8]) -> &[T] {
 fn bytes_as_slice_mut<T: Copy>(bytes: &mut [u8]) -> &mut [T] {
     let element_size = std::mem::size_of::<T>();
     assert!(
-        bytes.len().is_multiple_of(element_size),
+        bytes.len() % element_size == 0,
         "byte length {} not a multiple of element size {}",
         bytes.len(),
         element_size
@@ -258,11 +259,8 @@ impl CastValueCodec {
             serde_json::from_value(codec_entry.configuration.clone()).expect("valid codec config");
 
         let dst_dtype = DataType::from_str(&config.data_type).expect("supported target dtype");
-        let rounding: RoundingMode = config.rounding.parse().expect("valid rounding mode");
-        let out_of_range: Option<OutOfRangeMode> = config
-            .out_of_range
-            .as_deref()
-            .map(|s| s.parse().expect("valid out_of_range mode"));
+        let rounding = config.rounding;
+        let out_of_range = config.out_of_range;
 
         let encode_map = config.scalar_map.map(|sm| sm.encode).unwrap_or_default();
 
@@ -300,9 +298,8 @@ impl CastValueCodec {
         // Macros to reduce boilerplate in the N x N match below.
         macro_rules! f2i {
             ($src:ty, $dst:ty) => {{
-                let map = parse_map_entries_from_json::<$src, $dst>(&self.encode_map);
                 let config = FloatToIntConfig {
-                    map_entries: &map,
+                    map_entries: parse_map_entries_from_json::<$src, $dst>(&self.encode_map),
                     rounding: self.rounding,
                     out_of_range: self.out_of_range,
                 };
@@ -315,9 +312,8 @@ impl CastValueCodec {
         }
         macro_rules! i2i {
             ($src:ty, $dst:ty) => {{
-                let map = parse_map_entries_from_json::<$src, $dst>(&self.encode_map);
                 let config = IntToIntConfig {
-                    map_entries: &map,
+                    map_entries: parse_map_entries_from_json::<$src, $dst>(&self.encode_map),
                     out_of_range: self.out_of_range,
                 };
                 zarr_cast_value_core::convert_slice_int_to_int(
@@ -329,9 +325,8 @@ impl CastValueCodec {
         }
         macro_rules! f2f {
             ($src:ty, $dst:ty) => {{
-                let map = parse_map_entries_from_json::<$src, $dst>(&self.encode_map);
                 let config = FloatToFloatConfig {
-                    map_entries: &map,
+                    map_entries: parse_map_entries_from_json::<$src, $dst>(&self.encode_map),
                     rounding: self.rounding,
                     out_of_range: self.out_of_range,
                 };
@@ -344,9 +339,8 @@ impl CastValueCodec {
         }
         macro_rules! i2f {
             ($src:ty, $dst:ty) => {{
-                let map = parse_map_entries_from_json::<$src, $dst>(&self.encode_map);
                 let config = IntToFloatConfig {
-                    map_entries: &map,
+                    map_entries: parse_map_entries_from_json::<$src, $dst>(&self.encode_map),
                     rounding: self.rounding,
                 };
                 zarr_cast_value_core::convert_slice_int_to_float(

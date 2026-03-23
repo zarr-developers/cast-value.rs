@@ -2,12 +2,19 @@
 requires = ["maturin>=1.11,<2.0"]
 build-backend = "maturin"
 
+[tool.maturin]
+python-source = "."
+module-name = "zarr_cast_value.zarr_cast_value"
+
 [project]
 name = "zarr-cast-value"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dynamic = ["version"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
