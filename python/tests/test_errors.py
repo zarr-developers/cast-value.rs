@@ -37,7 +37,7 @@ INVALID_ARG_CASES = [
             target_dtype="uint8",
             rounding_mode="nearest-even",
         ),
-        error=ExpectedError(TypeError, "Unsupported dtype"),
+        error=ExpectedError(TypeError, "Unsupported numpy dtype"),
         id="unsupported-source-dtype",
     ),
     ExpectFail(

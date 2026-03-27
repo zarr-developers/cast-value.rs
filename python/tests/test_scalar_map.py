@@ -145,6 +145,38 @@ def test_behavior(case: Expect):
 
 
 # ---------------------------------------------------------------------------
+# Numpy scalar values in entries
+# ---------------------------------------------------------------------------
+
+
+def test_numpy_scalar_entries_float():
+    """Scalar map entries using numpy float scalars."""
+    result = _cast_f64_to_u8(
+        [(np.float64("nan"), np.uint8(0)), (np.float64("inf"), np.uint8(255))]
+    )
+    assert np.array_equal(result, np.array([1, 0, 255], dtype=np.uint8))
+
+
+def test_numpy_scalar_entries_dict():
+    """Scalar map dict with numpy scalar keys and values."""
+    result = _cast_f64_to_u8(
+        {np.float64("nan"): np.uint8(0), np.float64("inf"): np.uint8(255)}
+    )
+    assert np.array_equal(result, np.array([1, 0, 255], dtype=np.uint8))
+
+
+def test_numpy_scalar_entries_int():
+    """Scalar map entries using numpy int scalars."""
+    result = cast_array(
+        np.array([0, 1, 2], dtype=np.int32),
+        target_dtype="uint8",
+        rounding_mode="nearest-even",
+        scalar_map_entries=[(np.int32(0), np.uint8(99))],
+    )
+    assert np.array_equal(result, np.array([99, 1, 2], dtype=np.uint8))
+
+
+# ---------------------------------------------------------------------------
 # Error cases
 # ---------------------------------------------------------------------------
 
@@ -168,6 +200,16 @@ ERROR_CASES = [
         ),
         error=ExpectedError(ValueError, "pair"),
         id="wrong-length",
+    ),
+    ExpectFail(
+        input=dict(
+            arr=np.array([1.0, np.nan, 3.0], dtype=np.float64),
+            target_dtype="int32",
+            rounding_mode="nearest-even",
+            scalar_map_entries=[(np.float64(np.nan), np.float64(0.0))],
+        ),
+        error=ExpectedError(TypeError, r"scalar_map target value.*target dtype int32"),
+        id="float-target-value-for-int-dtype",
     ),
 ]
 
