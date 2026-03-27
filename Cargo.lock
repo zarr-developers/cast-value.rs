@@ -10,7 +10,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "cast-value-rs"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "half",
  "numpy",
@@ -373,7 +373,7 @@ checksum = "7264e107f553ccae879d21fbea1d6724ac785e8c3bfc762137959b5802826ef3"
 
 [[package]]
 name = "zarr-cast-value"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "half",
  "num-traits",
