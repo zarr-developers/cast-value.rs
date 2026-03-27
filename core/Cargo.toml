@@ -14,8 +14,14 @@ float16 = ["dep:half"]
 [dependencies]
 half = { version = "2", optional = true, features = ["num-traits"] }
 num-traits = "0.2"
+pulp = "0.22"
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 
 [dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
 serde_json = "1"
+
+[[bench]]
+name = "conversions"
+harness = false

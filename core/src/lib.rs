@@ -7,6 +7,8 @@
 use num_traits::{Float, One, ToPrimitive};
 use std::ops::{Add, Sub};
 
+mod simd;
+
 // ---------------------------------------------------------------------------
 // Error type
 // ---------------------------------------------------------------------------
@@ -575,15 +577,65 @@ where
 // ---------------------------------------------------------------------------
 
 /// Convert a slice of float values to integer values. Returns early on first error.
+///
+/// When the configuration allows it (empty scalar_map, clamp mode,
+/// rounding mode other than NearestAway), uses SIMD-accelerated kernels
+/// for supported type pairs (f64→u8, f64→i32, f32→u8).
 pub fn convert_slice_float_to_int<Src, Dst>(
     src: &[Src],
     dst: &mut [Dst],
     config: &FloatToIntConfig<Src, Dst>,
 ) -> Result<(), CastError>
 where
-    Src: CastFloat + CastInto<Dst>,
-    Dst: CastInt,
+    Src: CastFloat + CastInto<Dst> + 'static,
+    Dst: CastInt + 'static,
 {
+    // SIMD fast path: empty scalar_map + clamp + supported rounding mode.
+    // Uses TypeId to dispatch to concrete SIMD kernels at runtime.
+    // The `'static` bound is satisfied by all primitive numeric types.
+    if config.map_entries.is_empty()
+        && config.out_of_range == Some(OutOfRangeMode::Clamp)
+        && config.rounding != RoundingMode::NearestAway
+    {
+        use std::any::TypeId;
+
+        // f64 → u8
+        if TypeId::of::<Src>() == TypeId::of::<f64>() && TypeId::of::<Dst>() == TypeId::of::<u8>() {
+            // SAFETY: We just verified Src == f64 and Dst == u8 via TypeId.
+            let src_f64: &[f64] =
+                unsafe { std::slice::from_raw_parts(src.as_ptr() as *const f64, src.len()) };
+            let dst_u8: &mut [u8] =
+                unsafe { std::slice::from_raw_parts_mut(dst.as_mut_ptr() as *mut u8, dst.len()) };
+            if simd::try_f64_to_u8_clamp(src_f64, dst_u8, config.rounding)? {
+                return Ok(());
+            }
+        }
+
+        // f64 → i32
+        if TypeId::of::<Src>() == TypeId::of::<f64>() && TypeId::of::<Dst>() == TypeId::of::<i32>()
+        {
+            let src_f64: &[f64] =
+                unsafe { std::slice::from_raw_parts(src.as_ptr() as *const f64, src.len()) };
+            let dst_i32: &mut [i32] =
+                unsafe { std::slice::from_raw_parts_mut(dst.as_mut_ptr() as *mut i32, dst.len()) };
+            if simd::try_f64_to_i32_clamp(src_f64, dst_i32, config.rounding)? {
+                return Ok(());
+            }
+        }
+
+        // f32 → u8
+        if TypeId::of::<Src>() == TypeId::of::<f32>() && TypeId::of::<Dst>() == TypeId::of::<u8>() {
+            let src_f32: &[f32] =
+                unsafe { std::slice::from_raw_parts(src.as_ptr() as *const f32, src.len()) };
+            let dst_u8: &mut [u8] =
+                unsafe { std::slice::from_raw_parts_mut(dst.as_mut_ptr() as *mut u8, dst.len()) };
+            if simd::try_f32_to_u8_clamp(src_f32, dst_u8, config.rounding)? {
+                return Ok(());
+            }
+        }
+    }
+
+    // Scalar fallback
     for (in_val, out_slot) in src.iter().zip(dst.iter_mut()) {
         *out_slot = convert_float_to_int(*in_val, config)?;
     }
