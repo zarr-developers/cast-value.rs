@@ -6,11 +6,13 @@
 //!
 //! Dispatch priority per function:
 //! 1. **x86_64 + AVX2** (`pulp::x86::V3`) — raw intrinsics; best x86_64 perf.
-//! 2. **AArch64** — NEON intrinsics; always available on AArch64 targets.
-//! 3. **Everything else** — [`pulp::Arch::new().dispatch`][pulp::Arch] with the
+//! 2. **x86_64 + AVX1** — 256-bit FP operations for CPUs without AVX2.
+//! 3. **AArch64** — NEON intrinsics; always available on AArch64 targets.
+//! 4. **WASM32 + SIMD128** — 128-bit SIMD for WebAssembly.
+//! 5. **Everything else** — [`pulp::Arch::new().dispatch`][pulp::Arch] with the
 //!    generic [`WithSimd`][pulp::WithSimd] kernel: vectorizes NaN detection and
-//!    clamping on any arch pulp supports (SSE, WASM SIMD128, etc.), with
-//!    per-lane scalar rounding as the only non-vectorized step.
+//!    clamping on any arch pulp supports, with per-lane scalar rounding as the
+//!    only non-vectorized step.
 
 use crate::RoundingMode;
 
@@ -22,6 +24,9 @@ mod avx;
 
 #[cfg(target_arch = "aarch64")]
 mod aarch64;
+
+#[cfg(target_arch = "wasm32")]
+mod wasm32;
 
 mod generic;
 
@@ -106,7 +111,24 @@ fn dispatch_f64_to_u8(
     unsafe { aarch64::f64_to_u8_clamp(src, dst, rounding) }.map(|()| true)
 }
 
-#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+#[cfg(target_arch = "wasm32")]
+fn dispatch_f64_to_u8(
+    src: &[f64],
+    dst: &mut [u8],
+    rounding: RoundingMode,
+) -> Result<bool, crate::CastError> {
+    #[cfg(target_feature = "simd128")]
+    {
+        // SAFETY: simd128 feature is enabled at compile time.
+        return unsafe { wasm32::f64_to_u8_clamp(src, dst, rounding) }.map(|()| true);
+    }
+    #[cfg(not(target_feature = "simd128"))]
+    {
+        generic::f64_to_u8_clamp(src, dst, rounding)
+    }
+}
+
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "wasm32")))]
 fn dispatch_f64_to_u8(
     src: &[f64],
     dst: &mut [u8],
@@ -139,7 +161,23 @@ fn dispatch_f64_to_i32(
     unsafe { aarch64::f64_to_i32_clamp(src, dst, rounding) }.map(|()| true)
 }
 
-#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+#[cfg(target_arch = "wasm32")]
+fn dispatch_f64_to_i32(
+    src: &[f64],
+    dst: &mut [i32],
+    rounding: RoundingMode,
+) -> Result<bool, crate::CastError> {
+    #[cfg(target_feature = "simd128")]
+    {
+        return unsafe { wasm32::f64_to_i32_clamp(src, dst, rounding) }.map(|()| true);
+    }
+    #[cfg(not(target_feature = "simd128"))]
+    {
+        generic::f64_to_i32_clamp(src, dst, rounding)
+    }
+}
+
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "wasm32")))]
 fn dispatch_f64_to_i32(
     src: &[f64],
     dst: &mut [i32],
@@ -172,7 +210,23 @@ fn dispatch_f32_to_u8(
     unsafe { aarch64::f32_to_u8_clamp(src, dst, rounding) }.map(|()| true)
 }
 
-#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+#[cfg(target_arch = "wasm32")]
+fn dispatch_f32_to_u8(
+    src: &[f32],
+    dst: &mut [u8],
+    rounding: RoundingMode,
+) -> Result<bool, crate::CastError> {
+    #[cfg(target_feature = "simd128")]
+    {
+        return unsafe { wasm32::f32_to_u8_clamp(src, dst, rounding) }.map(|()| true);
+    }
+    #[cfg(not(target_feature = "simd128"))]
+    {
+        generic::f32_to_u8_clamp(src, dst, rounding)
+    }
+}
+
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "wasm32")))]
 fn dispatch_f32_to_u8(
     src: &[f32],
     dst: &mut [u8],
