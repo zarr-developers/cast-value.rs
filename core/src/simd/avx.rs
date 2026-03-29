@@ -58,7 +58,7 @@ pub(super) unsafe fn f64_to_u8_clamp(
 
         // Round
         let r = round_f64_avx(v, round_mode);
-        
+
         // Clamp
         let c = _mm256_min_pd(_mm256_max_pd(r, lo), hi);
 
@@ -121,7 +121,7 @@ pub(super) unsafe fn f64_to_i32_clamp(
 
         let r = round_f64_avx(v, round_mode);
         let c = _mm256_min_pd(_mm256_max_pd(r, lo), hi);
-        
+
         // Convert f64x4 → i32x4 (returns 128-bit)
         let converted = _mm256_cvtpd_epi32(c);
         _mm_storeu_si128(dst.as_mut_ptr().add(i) as *mut __m128i, converted);

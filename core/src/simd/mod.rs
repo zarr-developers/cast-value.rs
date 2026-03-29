@@ -128,7 +128,11 @@ fn dispatch_f64_to_u8(
     }
 }
 
-#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "wasm32")))]
+#[cfg(not(any(
+    target_arch = "x86_64",
+    target_arch = "aarch64",
+    target_arch = "wasm32"
+)))]
 fn dispatch_f64_to_u8(
     src: &[f64],
     dst: &mut [u8],
@@ -177,7 +181,11 @@ fn dispatch_f64_to_i32(
     }
 }
 
-#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "wasm32")))]
+#[cfg(not(any(
+    target_arch = "x86_64",
+    target_arch = "aarch64",
+    target_arch = "wasm32"
+)))]
 fn dispatch_f64_to_i32(
     src: &[f64],
     dst: &mut [i32],
@@ -226,7 +234,11 @@ fn dispatch_f32_to_u8(
     }
 }
 
-#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "wasm32")))]
+#[cfg(not(any(
+    target_arch = "x86_64",
+    target_arch = "aarch64",
+    target_arch = "wasm32"
+)))]
 fn dispatch_f32_to_u8(
     src: &[f32],
     dst: &mut [u8],

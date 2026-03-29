@@ -73,8 +73,6 @@ pub(super) unsafe fn f64_to_u8_clamp(
     dst: &mut [u8],
     rounding: RoundingMode,
 ) -> Result<(), crate::CastError> {
-
-
     let mut i = 0;
     let len = src.len();
 
@@ -142,8 +140,6 @@ pub(super) unsafe fn f64_to_i32_clamp(
     dst: &mut [i32],
     rounding: RoundingMode,
 ) -> Result<(), crate::CastError> {
-
-
     let mut i = 0;
     let len = src.len();
 
@@ -211,8 +207,6 @@ pub(super) unsafe fn f32_to_u8_clamp(
     dst: &mut [u8],
     rounding: RoundingMode,
 ) -> Result<(), crate::CastError> {
-
-
     let mut i = 0;
     let len = src.len();
 
