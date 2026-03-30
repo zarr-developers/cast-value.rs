@@ -142,12 +142,8 @@ fn bench_i32_to_u8(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("clamp", n), &n, |b, &n| {
             let mut dst = vec![0u8; n];
             b.iter(|| {
-                convert_slice_int_to_int(
-                    black_box(&src),
-                    black_box(&mut dst),
-                    black_box(&config),
-                )
-                .unwrap();
+                convert_slice_int_to_int(black_box(&src), black_box(&mut dst), black_box(&config))
+                    .unwrap();
             });
         });
     }
