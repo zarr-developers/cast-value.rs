@@ -1,0 +1,8 @@
+rules:
+  dangerous-triggers:
+    ignore:
+      # The conventional commits action only reads the PR title via the
+      # GitHub API — it does not check out or execute any code from the
+      # PR branch. pull_request_target is required for the action to
+      # have permission to add labels.
+      - conventional-commits.yml

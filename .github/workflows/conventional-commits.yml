@@ -11,6 +11,6 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: ytanikin/pr-conventional-commits@1.4.0
+      - uses: ytanikin/pr-conventional-commits@6ac1cea04190fc076b0e539025501d7e7d241ac1 # 1.4.0
         with:
           task_types: '["feat","fix","docs","test","ci","refactor","perf","chore","revert"]'
