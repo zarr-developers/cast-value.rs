@@ -1,0 +1,59 @@
+[project]
+site_name = "cast-value.rs"
+site_description = "Rust implementation of the Zarr cast_value codec with Python bindings."
+# site_url is set during CI build for correct GitHub Pages paths.
+# Omit locally so `zensical serve` works at localhost.
+repo_url = "https://github.com/zarr-developers/cast-value.rs"
+repo_name = "zarr-developers/cast-value.rs"
+copyright = "Copyright &copy; 2026 zarr-developers"
+
+nav = [
+    { "Home" = "index.md" },
+    { "Getting started" = "getting-started.md" },
+    { "Python API" = "python-api.md" },
+    { "Rust API" = "rust-api.md" },
+    { "Design" = "design.md" },
+]
+
+[project.theme]
+language = "en"
+features = [
+    "content.code.copy",
+    "content.code.annotate",
+    "navigation.footer",
+    "navigation.instant",
+    "navigation.instant.prefetch",
+    "navigation.path",
+    "navigation.sections",
+    "navigation.top",
+    "navigation.tracking",
+    "search.highlight",
+]
+
+[[project.theme.palette]]
+scheme = "default"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+scheme = "slate"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to light mode"
+
+[[project.extra.social]]
+icon = "fontawesome/brands/github"
+link = "https://github.com/zarr-developers/cast-value.rs"
+
+[[project.extra.social]]
+icon = "fontawesome/brands/python"
+link = "https://pypi.org/project/cast-value-rs/"
+
+[project.plugins.mkdocstrings.handlers.python]
+paths = ["python"]
+
+[project.plugins.mkdocstrings.handlers.python.options]
+docstring_style = "numpy"
+show_source = false
+show_root_heading = true
+show_root_full_path = false
+members_order = "source"
