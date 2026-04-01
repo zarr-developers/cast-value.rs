@@ -78,6 +78,37 @@ pub fn try_f32_to_u8_clamp(
     dispatch_f32_to_u8(src, dst, rounding)
 }
 
+/// Try to convert f64 slice to f32 slice using SIMD with nearest-even rounding.
+///
+/// When `error_on_overflow` is true, returns `Err(OutOfRange)` if any finite
+/// f64 overflows to ±Inf in f32. When false, overflow to ±Inf is accepted.
+///
+/// # Preconditions
+///
+/// * `src.len() == dst.len()`
+pub fn try_f64_to_f32_nearest(
+    src: &[f64],
+    dst: &mut [f32],
+    error_on_overflow: bool,
+) -> Result<bool, crate::CastError> {
+    dispatch_f64_to_f32(src, dst, error_on_overflow)
+}
+
+/// Try to convert f64 slice to i32 slice using SIMD, returning an error
+/// if any value is out of range (no clamping).
+///
+/// # Preconditions
+///
+/// * `src.len() == dst.len()`
+/// * `rounding` is not `NearestAway` (caller must check)
+pub fn try_f64_to_i32_check(
+    src: &[f64],
+    dst: &mut [i32],
+    rounding: RoundingMode,
+) -> Result<bool, crate::CastError> {
+    dispatch_f64_to_i32_check(src, dst, rounding)
+}
+
 // ---------------------------------------------------------------------------
 // Architecture dispatch — each function selects the optimal kernel.
 // ---------------------------------------------------------------------------
@@ -245,6 +276,50 @@ fn dispatch_f32_to_u8(
     rounding: RoundingMode,
 ) -> Result<bool, crate::CastError> {
     generic::f32_to_u8_clamp(src, dst, rounding)
+}
+
+// ---------------------------------------------------------------------------
+// Dispatch: f64 → f32 (nearest-even)
+// ---------------------------------------------------------------------------
+
+#[cfg(target_arch = "aarch64")]
+fn dispatch_f64_to_f32(
+    src: &[f64],
+    dst: &mut [f32],
+    error_on_overflow: bool,
+) -> Result<bool, crate::CastError> {
+    unsafe { aarch64::f64_to_f32_nearest(src, dst, error_on_overflow) }.map(|()| true)
+}
+
+#[cfg(not(target_arch = "aarch64"))]
+fn dispatch_f64_to_f32(
+    _src: &[f64],
+    _dst: &mut [f32],
+    _error_on_overflow: bool,
+) -> Result<bool, crate::CastError> {
+    Ok(false)
+}
+
+// ---------------------------------------------------------------------------
+// Dispatch: f64 → i32 (range-check, no clamp)
+// ---------------------------------------------------------------------------
+
+#[cfg(target_arch = "aarch64")]
+fn dispatch_f64_to_i32_check(
+    src: &[f64],
+    dst: &mut [i32],
+    rounding: RoundingMode,
+) -> Result<bool, crate::CastError> {
+    unsafe { aarch64::f64_to_i32_check(src, dst, rounding) }.map(|()| true)
+}
+
+#[cfg(not(target_arch = "aarch64"))]
+fn dispatch_f64_to_i32_check(
+    _src: &[f64],
+    _dst: &mut [i32],
+    _rounding: RoundingMode,
+) -> Result<bool, crate::CastError> {
+    Ok(false)
 }
 
 // ---------------------------------------------------------------------------

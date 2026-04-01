@@ -196,6 +196,24 @@ fn bench_f64_to_i32(c: &mut Criterion) {
                 .unwrap();
             });
         });
+
+        // No out_of_range (error on overflow) — all values in range
+        let config_none = FloatToIntConfig {
+            map_entries: vec![],
+            rounding: RoundingMode::NearestEven,
+            out_of_range: None,
+        };
+        group.bench_with_input(BenchmarkId::new("f64_to_i32/no_oor", n), &n, |b, &n| {
+            let mut dst = vec![0i32; n];
+            b.iter(|| {
+                convert_slice_float_to_int(
+                    black_box(&src),
+                    black_box(&mut dst),
+                    black_box(&config_none),
+                )
+                .unwrap();
+            });
+        });
     }
     group.finish();
 }
@@ -315,6 +333,28 @@ fn bench_f64_to_f32(c: &mut Criterion) {
                 .unwrap();
             });
         });
+
+        // Towards-zero rounding, no out_of_range (scalar fallback path)
+        let config_tz = FloatToFloatConfig {
+            map_entries: vec![],
+            rounding: RoundingMode::TowardsZero,
+            out_of_range: None,
+        };
+        group.bench_with_input(
+            BenchmarkId::new("f64_to_f32/towards_zero", n),
+            &n,
+            |b, &n| {
+                let mut dst = vec![0f32; n];
+                b.iter(|| {
+                    convert_slice_float_to_float(
+                        black_box(&src),
+                        black_box(&mut dst),
+                        black_box(&config_tz),
+                    )
+                    .unwrap();
+                });
+            },
+        );
     }
     group.finish();
 }

@@ -284,6 +284,157 @@ pub(super) unsafe fn f32_to_u8_clamp(
     Ok(())
 }
 
+/// Convert f64 slice to f32 slice using nearest-even rounding.
+///
+/// NEON's `vcvt_f32_f64` performs the narrowing with nearest-even rounding
+/// (the default IEEE 754 mode), processing 2 f64 → 2 f32 per instruction.
+///
+/// Two-pass approach:
+/// 1. Fast convert pass: just `vcvt_f32_f64` + store (no branching).
+/// 2. If `error_on_overflow`, a second pass checks for finite→infinite overflow.
+///
+/// This keeps the hot convert loop branch-free for maximum throughput.
+///
+/// # Safety
+///
+/// Caller must ensure this runs on an AArch64 target.
+pub(super) unsafe fn f64_to_f32_nearest(
+    src: &[f64],
+    dst: &mut [f32],
+    error_on_overflow: bool,
+) -> Result<(), crate::CastError> {
+    let n = src.len();
+    let simd_len = n / 2 * 2;
+
+    // Pass 1: branch-free narrowing conversion
+    for i in (0..simd_len).step_by(2) {
+        let v = vld1q_f64(src.as_ptr().add(i));
+        let narrowed = vcvt_f32_f64(v);
+        vst1_f32(dst.as_mut_ptr().add(i), narrowed);
+    }
+    // Scalar tail
+    for i in simd_len..n {
+        dst[i] = src[i] as f32;
+    }
+
+    // Pass 2: overflow check (only when out_of_range is None)
+    if error_on_overflow {
+        let inf_f32 = vdup_n_f32(f32::INFINITY);
+        for i in (0..simd_len).step_by(2) {
+            // Check if result is ±Inf
+            let result = vld1_f32(dst.as_ptr().add(i));
+            let abs_result = vabs_f32(result);
+            let result_is_inf = vceq_f32(abs_result, inf_f32);
+            // Quick reject: if no Inf in result, no overflow possible
+            let inf_bytes: uint8x8_t = vreinterpret_u8_u32(result_is_inf);
+            if vmaxv_u8(inf_bytes) != 0 {
+                // At least one result is Inf — check if source was finite
+                for (&sv, &dv) in src[i..].iter().zip(dst[i..].iter()).take(2) {
+                    if sv.is_finite() && dv.is_infinite() {
+                        return Err(crate::CastError::OutOfRange {
+                            value: sv,
+                            lo: f32::MIN as f64,
+                            hi: f32::MAX as f64,
+                        });
+                    }
+                }
+            }
+        }
+        // Tail check
+        for i in simd_len..n {
+            if src[i].is_finite() && dst[i].is_infinite() {
+                return Err(crate::CastError::OutOfRange {
+                    value: src[i],
+                    lo: f32::MIN as f64,
+                    hi: f32::MAX as f64,
+                });
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Convert f64 slice to i32 slice with rounding, returning an error if any
+/// value is out of range (no clamping).
+///
+/// Same pipeline as `f64_to_i32_clamp` but instead of clamping, we
+/// batch-check that all rounded values fall within [i32::MIN, i32::MAX]
+/// and error if not.
+///
+/// # Safety
+///
+/// Caller must ensure this runs on an AArch64 target.
+pub(super) unsafe fn f64_to_i32_check(
+    src: &[f64],
+    dst: &mut [i32],
+    rounding: RoundingMode,
+) -> Result<(), crate::CastError> {
+    let n = src.len();
+    let simd_len = n / 2 * 2;
+
+    let lo = vdupq_n_f64(i32::MIN as f64);
+    let hi = vdupq_n_f64(i32::MAX as f64);
+
+    for i in (0..simd_len).step_by(2) {
+        let v = vld1q_f64(src.as_ptr().add(i));
+
+        // NaN check
+        if any_nan_f64x2(v) {
+            for &val in &src[i..std::cmp::min(i + 2, n)] {
+                if val.is_nan() {
+                    return Err(crate::CastError::NanOrInf { value: val });
+                }
+            }
+        }
+
+        let r = round_f64x2(v, rounding);
+
+        // Range check: error if any value < lo or > hi
+        // vcltq_f64 returns all-ones for true, all-zeros for false
+        let below = vcltq_f64(r, lo);
+        let above = vcgtq_f64(r, hi);
+        let out_of_range = vorrq_u64(below, above);
+        let oor_bytes: uint8x16_t = vreinterpretq_u8_u64(out_of_range);
+        if vmaxvq_u8(oor_bytes) != 0 {
+            // Find exact offending element
+            for &val in src[i..].iter().take(2) {
+                let rounded = scalar_round_f64(val, rounding);
+                if rounded < i32::MIN as f64 || rounded > i32::MAX as f64 {
+                    return Err(crate::CastError::OutOfRange {
+                        value: val,
+                        lo: i32::MIN as f64,
+                        hi: i32::MAX as f64,
+                    });
+                }
+            }
+        }
+
+        // Convert (values are in range, truncation after rounding is correct)
+        let i32_val = vmovn_s64(vcvtq_s64_f64(r));
+        vst1_s32(dst.as_mut_ptr().add(i), i32_val);
+    }
+
+    // Scalar tail
+    for i in simd_len..n {
+        let val = src[i];
+        if val.is_nan() {
+            return Err(crate::CastError::NanOrInf { value: val });
+        }
+        let rounded = scalar_round_f64(val, rounding);
+        if rounded < i32::MIN as f64 || rounded > i32::MAX as f64 {
+            return Err(crate::CastError::OutOfRange {
+                value: val,
+                lo: i32::MIN as f64,
+                hi: i32::MAX as f64,
+            });
+        }
+        dst[i] = rounded as i32;
+    }
+
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Scalar tail helpers (shared across kernels)
 // ---------------------------------------------------------------------------

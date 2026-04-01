@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Generic SIMD kernels using [`pulp`]'s [`WithSimd`] trait.
 //!
 //! These kernels use portable SIMD abstractions that compile to efficient code
@@ -62,7 +63,7 @@ struct F64ToU8ClampKernel<'a> {
     rounding: RoundingMode,
 }
 
-impl<'a> WithSimd for F64ToU8ClampKernel<'a> {
+impl WithSimd for F64ToU8ClampKernel<'_> {
     type Output = Result<(), crate::CastError>;
 
     fn with_simd<S: Simd>(self, simd: S) -> Self::Output {
@@ -136,7 +137,7 @@ struct F64ToI32ClampKernel<'a> {
     rounding: RoundingMode,
 }
 
-impl<'a> WithSimd for F64ToI32ClampKernel<'a> {
+impl WithSimd for F64ToI32ClampKernel<'_> {
     type Output = Result<(), crate::CastError>;
 
     fn with_simd<S: Simd>(self, simd: S) -> Self::Output {
@@ -200,7 +201,7 @@ struct F32ToU8ClampKernel<'a> {
     rounding: RoundingMode,
 }
 
-impl<'a> WithSimd for F32ToU8ClampKernel<'a> {
+impl WithSimd for F32ToU8ClampKernel<'_> {
     type Output = Result<(), crate::CastError>;
 
     fn with_simd<S: Simd>(self, simd: S) -> Self::Output {

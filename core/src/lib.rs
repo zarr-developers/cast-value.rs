@@ -635,6 +635,28 @@ where
         }
     }
 
+    // SIMD fast path: empty scalar_map + no out_of_range (error mode) + supported rounding.
+    // Range-checking variant: errors if any value is out of range.
+    if config.map_entries.is_empty()
+        && config.out_of_range.is_none()
+        && config.rounding != RoundingMode::NearestAway
+    {
+        use std::any::TypeId;
+
+        // f64 → i32
+        if TypeId::of::<Src>() == TypeId::of::<f64>()
+            && TypeId::of::<Dst>() == TypeId::of::<i32>()
+        {
+            let src_f64: &[f64] =
+                unsafe { std::slice::from_raw_parts(src.as_ptr() as *const f64, src.len()) };
+            let dst_i32: &mut [i32] =
+                unsafe { std::slice::from_raw_parts_mut(dst.as_mut_ptr() as *mut i32, dst.len()) };
+            if simd::try_f64_to_i32_check(src_f64, dst_i32, config.rounding)? {
+                return Ok(());
+            }
+        }
+    }
+
     // Scalar fallback
     for (in_val, out_slot) in src.iter().zip(dst.iter_mut()) {
         *out_slot = convert_float_to_int(*in_val, config)?;
@@ -659,15 +681,38 @@ where
 }
 
 /// Convert a slice of float values to float values. Returns early on first error.
+///
+/// When the configuration allows it (empty scalar_map, nearest-even rounding),
+/// uses SIMD-accelerated kernels for supported type pairs (f64->f32).
 pub fn convert_slice_float_to_float<Src, Dst>(
     src: &[Src],
     dst: &mut [Dst],
     config: &FloatToFloatConfig<Src, Dst>,
 ) -> Result<(), CastError>
 where
-    Src: CastFloat + CastInto<Dst>,
-    Dst: CastFloat,
+    Src: CastFloat + CastInto<Dst> + 'static,
+    Dst: CastFloat + 'static,
 {
+    // SIMD fast path: empty scalar_map + nearest-even rounding + f64→f32.
+    if config.map_entries.is_empty() && config.rounding == RoundingMode::NearestEven {
+        use std::any::TypeId;
+
+        if TypeId::of::<Src>() == TypeId::of::<f64>()
+            && TypeId::of::<Dst>() == TypeId::of::<f32>()
+        {
+            // SAFETY: We just verified Src == f64 and Dst == f32 via TypeId.
+            let src_f64: &[f64] =
+                unsafe { std::slice::from_raw_parts(src.as_ptr() as *const f64, src.len()) };
+            let dst_f32: &mut [f32] =
+                unsafe { std::slice::from_raw_parts_mut(dst.as_mut_ptr() as *mut f32, dst.len()) };
+            let error_on_overflow = config.out_of_range != Some(OutOfRangeMode::Clamp);
+            if simd::try_f64_to_f32_nearest(src_f64, dst_f32, error_on_overflow)? {
+                return Ok(());
+            }
+        }
+    }
+
+    // Scalar fallback
     for (in_val, out_slot) in src.iter().zip(dst.iter_mut()) {
         *out_slot = convert_float_to_float(*in_val, config)?;
     }
