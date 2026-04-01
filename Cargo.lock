@@ -61,7 +61,7 @@ checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
 name = "cast-value-rs"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "half",
  "numpy",
@@ -1099,7 +1099,7 @@ dependencies = [
 
 [[package]]
 name = "zarr-cast-value"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "codspeed-criterion-compat",
  "half",
