@@ -59,4 +59,4 @@ jobs:
       - name: Build
         run: uv run --directory python --with maturin maturin develop
       - name: Test
-        run: uv run --directory python --with pytest --with numpy pytest tests/
+        run: uv run --directory python --group test pytest

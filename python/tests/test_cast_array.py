@@ -7,7 +7,7 @@ import pytest
 
 from cast_value_rs import cast_array
 
-from .conftest import Expect, ExpectFail, ExpectedError, nan_eq
+from .conftest import Expect, ExpectFail, nan_eq
 
 # ---------------------------------------------------------------------------
 # float -> int
@@ -127,7 +127,7 @@ FLOAT_TO_INT_FAIL_CASES = [
             target_dtype="uint8",
             rounding_mode="nearest-even",
         ),
-        error=ExpectedError(ValueError, "out of range"),
+        exception=ValueError, match="out of range",
         id="out-of-range",
     ),
     ExpectFail(
@@ -136,7 +136,7 @@ FLOAT_TO_INT_FAIL_CASES = [
             target_dtype="uint8",
             rounding_mode="nearest-even",
         ),
-        error=ExpectedError(ValueError, "NaN"),
+        exception=ValueError, match="NaN",
         id="nan",
     ),
     ExpectFail(
@@ -146,7 +146,7 @@ FLOAT_TO_INT_FAIL_CASES = [
             rounding_mode="nearest-even",
             out_of_range_mode="wrap",
         ),
-        error=ExpectedError(ValueError, "cast"),
+        exception=ValueError, match="cast",
         id="inf-wrap",
     ),
 ]
@@ -222,7 +222,7 @@ INT_TO_INT_FAIL_CASES = [
             target_dtype="uint8",
             rounding_mode="nearest-even",
         ),
-        error=ExpectedError(ValueError, "out of range"),
+        exception=ValueError, match="out of range",
         id="out-of-range",
     ),
 ]
@@ -300,7 +300,7 @@ FLOAT_TO_FLOAT_FAIL_CASES = [
             target_dtype="float32",
             rounding_mode="nearest-even",
         ),
-        error=ExpectedError(ValueError, "out of range"),
+        exception=ValueError, match="out of range",
         id="overflow",
     ),
 ]

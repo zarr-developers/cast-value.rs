@@ -8,7 +8,7 @@ use numpy::{
     PyArrayDyn, PyArrayMethods, PyReadonlyArrayDyn, PyUntypedArray, PyUntypedArrayMethods,
 };
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::PyMapping;
 use zarr_cast_value::{
     CastError, CastFloat, CastInt, CastInto, FloatToFloatConfig, FloatToIntConfig,
     IntToFloatConfig, IntToIntConfig, MapEntry, OutOfRangeMode, RoundingMode,
@@ -134,11 +134,15 @@ where
         })
     };
 
-    // Dicts are special: iterating a dict yields keys only, so we
-    // need to iterate key-value pairs explicitly.
-    if let Ok(dict) = obj.downcast::<PyDict>() {
-        let mut result = Vec::with_capacity(dict.len());
-        for (key, val) in dict.iter() {
+    // Mappings yield keys only when iterated, so extract key-value pairs via .items().
+    if let Ok(dict) = obj.downcast::<PyMapping>() {
+        // PyMapping.len() returns Result even though the protocol guarantees __len__.
+        let mapping_len = dict.len().map_err(|_| {
+            pyo3::exceptions::PyTypeError::new_err("Failed to get length of scalar_map dict.")
+        })?;
+        let mut result = Vec::with_capacity(mapping_len);
+        for kv in dict.items()?.iter() {
+            let (key, val) = kv.extract()?;
             let src = extract_src(&key)?;
             let tgt = extract_tgt(&val)?;
             result.push(MapEntry { src, tgt });

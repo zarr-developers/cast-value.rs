@@ -29,21 +29,14 @@ class Expect:
 
 
 @dataclass
-class ExpectedError:
-    """The expected exception type and a regex pattern to match against its message."""
-
-    exception: type[Exception]
-    match: str
-
-
-@dataclass
 class ExpectFail:
     """A test case that should raise an exception."""
 
     input: Any
-    error: ExpectedError
+    exception: type[Exception]
+    match: str
     id: str | None = None
 
     def check(self, fn: Callable[..., Any]) -> None:
-        with pytest.raises(self.error.exception, match=self.error.match):
+        with pytest.raises(self.exception, match=self.match):
             fn(**self.input)

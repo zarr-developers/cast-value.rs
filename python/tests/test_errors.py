@@ -5,7 +5,7 @@ import pytest
 
 from cast_value_rs import cast_array, cast_array_into
 
-from .conftest import ExpectFail, ExpectedError
+from .conftest import ExpectFail
 
 # ---------------------------------------------------------------------------
 # Invalid arguments
@@ -18,7 +18,7 @@ INVALID_ARG_CASES = [
             target_dtype="uint8",
             rounding_mode="bad",
         ),
-        error=ExpectedError(ValueError, "Unknown rounding mode"),
+        exception=ValueError, match="Unknown rounding mode",
         id="bad-rounding-mode",
     ),
     ExpectFail(
@@ -28,7 +28,7 @@ INVALID_ARG_CASES = [
             rounding_mode="nearest-even",
             out_of_range_mode="bad",
         ),
-        error=ExpectedError(ValueError, "Unknown out_of_range mode"),
+        exception=ValueError, match="Unknown out_of_range mode",
         id="bad-out-of-range-mode",
     ),
     ExpectFail(
@@ -37,7 +37,7 @@ INVALID_ARG_CASES = [
             target_dtype="uint8",
             rounding_mode="nearest-even",
         ),
-        error=ExpectedError(TypeError, "Unsupported numpy dtype"),
+        exception=TypeError, match="Unsupported numpy dtype",
         id="unsupported-source-dtype",
     ),
     ExpectFail(
@@ -46,7 +46,7 @@ INVALID_ARG_CASES = [
             target_dtype="bool",
             rounding_mode="nearest-even",
         ),
-        error=ExpectedError(TypeError, "Unsupported target dtype"),
+        exception=TypeError, match="Unsupported target dtype",
         id="unsupported-target-dtype",
     ),
 ]
@@ -66,7 +66,7 @@ def test_invalid_args(case: ExpectFail):
 KEYWORD_ONLY_CASES = [
     ExpectFail(
         input=dict(args=(np.array([1.0], dtype=np.float64), "uint8", "nearest-even")),
-        error=ExpectedError(TypeError, ""),
+        exception=TypeError, match="",
         id="cast-array-positional",
     ),
 ]
@@ -121,6 +121,6 @@ def test_non_contiguous_input():
     assert not arr.flags["C_CONTIGUOUS"]
     case = ExpectFail(
         input=dict(arr=arr, target_dtype="uint8", rounding_mode="nearest-even"),
-        error=ExpectedError(ValueError, "contiguous"),
+        exception=ValueError, match="contiguous",
     )
     case.check(cast_array)

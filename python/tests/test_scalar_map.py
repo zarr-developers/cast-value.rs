@@ -1,5 +1,6 @@
 """Tests for scalar_map_entries parsing and behavior."""
 
+from collections.abc import Mapping
 from math import inf, nan
 
 import numpy as np
@@ -7,7 +8,7 @@ import pytest
 
 from cast_value_rs import cast_array
 
-from .conftest import Expect, ExpectFail, ExpectedError, nan_eq
+from .conftest import Expect, ExpectFail, nan_eq
 
 
 def _cast_f64_to_u8(scalar_map_entries):
@@ -20,6 +21,20 @@ def _cast_f64_to_u8(scalar_map_entries):
         scalar_map_entries=scalar_map_entries,
     )
 
+class ScalarMapping(Mapping[object, object]):
+    """A custom mapping type for testing dict-like input acceptance."""
+
+    def __init__(self, data: Mapping[object, object]):
+        self._data = data
+
+    def __getitem__(self, key):
+        return self._data[key]
+
+    def __iter__(self):
+        return iter(self._data)
+
+    def __len__(self):
+        return len(self._data)
 
 # ---------------------------------------------------------------------------
 # Input format acceptance
@@ -30,6 +45,16 @@ FORMAT_CASES = [
         input={nan: 0, inf: 255},
         expected=np.array([1, 0, 255], dtype=np.uint8),
         id="dict",
+    ),
+    Expect(
+        input={nan: np.uint8(0), inf: np.uint8(255)},
+        expected=np.array([1, 0, 255], dtype=np.uint8),
+        id="dict-of-numpy-scalars",
+    ),
+    Expect(
+        input=ScalarMapping({nan: 0, inf: 255}),
+        expected=np.array([1, 0, 255], dtype=np.uint8),
+        id="custom-mapping",
     ),
     Expect(
         input=[(nan, 0), (inf, 255)],
@@ -188,7 +213,7 @@ ERROR_CASES = [
             rounding_mode="nearest-even",
             scalar_map_entries=42,
         ),
-        error=ExpectedError(TypeError, "iterable"),
+        exception=TypeError, match="iterable",
         id="not-iterable",
     ),
     ExpectFail(
@@ -198,7 +223,7 @@ ERROR_CASES = [
             rounding_mode="nearest-even",
             scalar_map_entries=[(1.0, 2.0, 3.0)],
         ),
-        error=ExpectedError(ValueError, "pair"),
+        exception=ValueError, match="pair",
         id="wrong-length",
     ),
     ExpectFail(
@@ -208,7 +233,7 @@ ERROR_CASES = [
             rounding_mode="nearest-even",
             scalar_map_entries=[(np.float64(np.nan), np.float64(0.0))],
         ),
-        error=ExpectedError(TypeError, r"scalar_map target value.*target dtype int32"),
+        exception=TypeError, match=r"scalar_map target value.*target dtype int32",
         id="float-target-value-for-int-dtype",
     ),
 ]

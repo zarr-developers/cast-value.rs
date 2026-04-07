@@ -7,7 +7,7 @@ import pytest
 
 from cast_value_rs import cast_array_into
 
-from .conftest import Expect, ExpectFail, ExpectedError
+from .conftest import Expect, ExpectFail
 
 
 def _run_into(case: Expect) -> None:
@@ -108,7 +108,7 @@ CAST_INTO_FAIL_CASES = [
             out=np.zeros(2, dtype=np.uint8),
             rounding_mode="nearest-even",
         ),
-        error=ExpectedError(ValueError, "Shape mismatch"),
+        exception=ValueError, match="Shape mismatch",
         id="shape-mismatch",
     ),
 ]
