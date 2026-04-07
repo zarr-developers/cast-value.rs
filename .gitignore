@@ -5,8 +5,10 @@ __pycache__/
 .pytest_cache/
 *.py[cod]
 
-# C extensions
+# C extensions / native libraries
 *.so
+*.dylib
+*.dSYM/
 
 # Distribution / packaging
 .Python
