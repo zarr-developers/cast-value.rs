@@ -18,5 +18,8 @@ classifiers = [
 ]
 dynamic = ["version"]
 
+[dependency-groups]
+test = ["pytest", "numpy"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
