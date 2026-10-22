@@ -13,5 +13,5 @@ crate-type = ["cdylib"]
 [dependencies]
 zarr-cast-value = { path = "../core", features = ["float16"] }
 half = "2"
-pyo3 = { version = "0.25", features = ["extension-module"] }
-numpy = { version = "0.25", features = ["half"] }
+pyo3 = { version = "0.30", features = ["extension-module"] }
+numpy = { version = "0.30", features = ["half"] }

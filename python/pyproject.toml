@@ -10,7 +10,7 @@ module-name = "cast_value_rs._cast_value_rs"
 name = "cast-value-rs"
 description = "Python bindings for the Zarr cast_value codec"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 license = {text = "MIT OR Apache-2.0"}
 keywords = ["zarr", "codec", "cast", "numpy", "rust"]
 classifiers = [

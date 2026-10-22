@@ -9,6 +9,7 @@ use numpy::{
 };
 use pyo3::prelude::*;
 use pyo3::types::PyMapping;
+use pyo3::Borrowed;
 use zarr_cast_value::{
     CastError, CastFloat, CastInt, CastInto, FloatToFloatConfig, FloatToIntConfig,
     IntToFloatConfig, IntToIntConfig, MapEntry, OutOfRangeMode, RoundingMode,
@@ -57,8 +58,10 @@ impl ExtractFromPy for f16 {
 /// parsing from Python string arguments.
 struct PyRoundingMode(RoundingMode);
 
-impl<'py> FromPyObject<'py> for PyRoundingMode {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl FromPyObject<'_, '_> for PyRoundingMode {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
         let s: &str = ob.extract()?;
         s.parse::<RoundingMode>()
             .map(PyRoundingMode)
@@ -70,8 +73,10 @@ impl<'py> FromPyObject<'py> for PyRoundingMode {
 /// automatic parsing from Python string arguments.
 struct PyOutOfRangeMode(OutOfRangeMode);
 
-impl<'py> FromPyObject<'py> for PyOutOfRangeMode {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl FromPyObject<'_, '_> for PyOutOfRangeMode {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
         let s: &str = ob.extract()?;
         s.parse::<OutOfRangeMode>()
             .map(PyOutOfRangeMode)
@@ -135,7 +140,7 @@ where
     };
 
     // Mappings yield keys only when iterated, so extract key-value pairs via .items().
-    if let Ok(dict) = obj.downcast::<PyMapping>() {
+    if let Ok(dict) = obj.cast::<PyMapping>() {
         // PyMapping.len() returns Result even though the protocol guarantees __len__.
         let mapping_len = dict.len().map_err(|_| {
             pyo3::exceptions::PyTypeError::new_err("Failed to get length of scalar_map dict.")
@@ -244,7 +249,7 @@ fn readonly_row_major<'py, T: numpy::Element>(
             "Input array must be row-major (C-contiguous)",
         ));
     }
-    Ok(arr.downcast::<PyArrayDyn<T>>()?.readonly())
+    Ok(arr.cast::<PyArrayDyn<T>>()?.readonly())
 }
 
 /// Panic message for `as_slice` on an array `readonly_row_major` accepted.
@@ -259,7 +264,7 @@ fn do_float_to_int_alloc<'py, Src, Dst>(
     map_entries_py: Option<&Bound<'py, PyAny>>,
     src_dtype: &str,
     tgt_dtype: &str,
-) -> PyResult<PyObject>
+) -> PyResult<Py<PyAny>>
 where
     Src: CastFloat + CastInto<Dst> + ExtractFromPy + numpy::Element + 'static,
     Dst: CastInt + ExtractFromPy + numpy::Element + 'static,
@@ -298,7 +303,7 @@ fn do_int_to_int_alloc<'py, Src, Dst>(
     map_entries_py: Option<&Bound<'py, PyAny>>,
     src_dtype: &str,
     tgt_dtype: &str,
-) -> PyResult<PyObject>
+) -> PyResult<Py<PyAny>>
 where
     Src: CastInt + CastInto<Dst> + ExtractFromPy + numpy::Element,
     Dst: CastInt + ExtractFromPy + numpy::Element,
@@ -336,7 +341,7 @@ fn do_float_to_float_alloc<'py, Src, Dst>(
     map_entries_py: Option<&Bound<'py, PyAny>>,
     src_dtype: &str,
     tgt_dtype: &str,
-) -> PyResult<PyObject>
+) -> PyResult<Py<PyAny>>
 where
     Src: CastFloat + CastInto<Dst> + ExtractFromPy + numpy::Element + 'static,
     Dst: CastFloat + ExtractFromPy + numpy::Element + 'static,
@@ -374,7 +379,7 @@ fn do_int_to_float_alloc<'py, Src, Dst>(
     map_entries_py: Option<&Bound<'py, PyAny>>,
     src_dtype: &str,
     tgt_dtype: &str,
-) -> PyResult<PyObject>
+) -> PyResult<Py<PyAny>>
 where
     Src: CastInt + CastInto<Dst> + ExtractFromPy + numpy::Element,
     Dst: CastFloat + ExtractFromPy + numpy::Element,
@@ -416,7 +421,7 @@ fn do_float_to_int_into<'py, Src, Dst>(
     map_entries_py: Option<&Bound<'py, PyAny>>,
     src_dtype: &str,
     tgt_dtype: &str,
-) -> PyResult<PyObject>
+) -> PyResult<Py<PyAny>>
 where
     Src: CastFloat + CastInto<Dst> + ExtractFromPy + numpy::Element + 'static,
     Dst: CastInt + ExtractFromPy + numpy::Element + 'static,
@@ -428,7 +433,7 @@ where
         rounding,
         out_of_range: oor,
     };
-    let out_arr: &Bound<'_, PyArrayDyn<Dst>> = out.downcast()?;
+    let out_arr: &Bound<'_, PyArrayDyn<Dst>> = out.cast()?;
     // Zero-size arrays skip the conversion: there is nothing to convert, and
     // numpy gives all zero-size arrays strides of 0, which `as_array_mut`'s
     // debug-build stride assertions reject as self-overlapping.
@@ -455,7 +460,7 @@ fn do_int_to_int_into<'py, Src, Dst>(
     map_entries_py: Option<&Bound<'py, PyAny>>,
     src_dtype: &str,
     tgt_dtype: &str,
-) -> PyResult<PyObject>
+) -> PyResult<Py<PyAny>>
 where
     Src: CastInt + CastInto<Dst> + ExtractFromPy + numpy::Element,
     Dst: CastInt + ExtractFromPy + numpy::Element,
@@ -466,7 +471,7 @@ where
         map_entries: parse_map_entries::<Src, Dst>(map_entries_py, src_dtype, tgt_dtype)?,
         out_of_range: oor,
     };
-    let out_arr: &Bound<'_, PyArrayDyn<Dst>> = out.downcast()?;
+    let out_arr: &Bound<'_, PyArrayDyn<Dst>> = out.cast()?;
     // Zero-size arrays skip the conversion: there is nothing to convert, and
     // numpy gives all zero-size arrays strides of 0, which `as_array_mut`'s
     // debug-build stride assertions reject as self-overlapping.
@@ -494,7 +499,7 @@ fn do_float_to_float_into<'py, Src, Dst>(
     map_entries_py: Option<&Bound<'py, PyAny>>,
     src_dtype: &str,
     tgt_dtype: &str,
-) -> PyResult<PyObject>
+) -> PyResult<Py<PyAny>>
 where
     Src: CastFloat + CastInto<Dst> + ExtractFromPy + numpy::Element + 'static,
     Dst: CastFloat + ExtractFromPy + numpy::Element + 'static,
@@ -506,7 +511,7 @@ where
         rounding,
         out_of_range: oor,
     };
-    let out_arr: &Bound<'_, PyArrayDyn<Dst>> = out.downcast()?;
+    let out_arr: &Bound<'_, PyArrayDyn<Dst>> = out.cast()?;
     // Zero-size arrays skip the conversion: there is nothing to convert, and
     // numpy gives all zero-size arrays strides of 0, which `as_array_mut`'s
     // debug-build stride assertions reject as self-overlapping.
@@ -533,7 +538,7 @@ fn do_int_to_float_into<'py, Src, Dst>(
     map_entries_py: Option<&Bound<'py, PyAny>>,
     src_dtype: &str,
     tgt_dtype: &str,
-) -> PyResult<PyObject>
+) -> PyResult<Py<PyAny>>
 where
     Src: CastInt + CastInto<Dst> + ExtractFromPy + numpy::Element,
     Dst: CastFloat + ExtractFromPy + numpy::Element,
@@ -544,7 +549,7 @@ where
         map_entries: parse_map_entries::<Src, Dst>(map_entries_py, src_dtype, tgt_dtype)?,
         rounding,
     };
-    let out_arr: &Bound<'_, PyArrayDyn<Dst>> = out.downcast()?;
+    let out_arr: &Bound<'_, PyArrayDyn<Dst>> = out.cast()?;
     // Zero-size arrays skip the conversion: there is nothing to convert, and
     // numpy gives all zero-size arrays strides of 0, which `as_array_mut`'s
     // debug-build stride assertions reject as self-overlapping.
@@ -577,7 +582,7 @@ fn dispatch_alloc<'py>(
     rounding: RoundingMode,
     oor: Option<OutOfRangeMode>,
     map_entries_py: Option<&Bound<'py, PyAny>>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     // Dispatch uses four path-specific macros to call the right conversion
     // function.
     macro_rules! float_to_int {
@@ -706,7 +711,7 @@ fn dispatch_into<'py>(
     rounding: RoundingMode,
     oor: Option<OutOfRangeMode>,
     map_entries_py: Option<&Bound<'py, PyAny>>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     macro_rules! float_to_int {
         ($src_ty:ty, $dst_ty:ty) => {
             do_float_to_int_into::<$src_ty, $dst_ty>(
@@ -853,7 +858,7 @@ fn cast_array<'py>(
     rounding_mode: PyRoundingMode,
     out_of_range_mode: Option<PyOutOfRangeMode>,
     scalar_map_entries: Option<&Bound<'py, PyAny>>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let src_dtype = array_dtype_key(arr)?;
 
     dispatch_alloc(
@@ -898,7 +903,7 @@ fn cast_array_into<'py>(
     rounding_mode: PyRoundingMode,
     out_of_range_mode: Option<PyOutOfRangeMode>,
     scalar_map_entries: Option<&Bound<'py, PyAny>>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let src_dtype = array_dtype_key(arr)?;
     let tgt_dtype = array_dtype_key(out)?;
 
